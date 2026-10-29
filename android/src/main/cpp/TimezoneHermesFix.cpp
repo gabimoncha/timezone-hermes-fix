@@ -2,13 +2,12 @@
 #include <jsi/jsi.h>
 #include <ReactCommon/CallInvokerHolder.h>
 #include <fbjni/fbjni.h>
-#include <hermes/hermes.h>
+#include <jsi/hermes-interfaces.h>
 #include <android/log.h>
 
 using namespace facebook;
 using namespace facebook::jni;
 using namespace facebook::react;
-using namespace facebook::hermes;
 
 #define LOG_TAG "TimezoneHermesFix"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -29,17 +28,16 @@ jni::local_ref<TimezoneHermesFix::jhybriddata> TimezoneHermesFix::initHybrid(
 void TimezoneHermesFix::resetTzHermes(jlong jsRuntimePtr) {
     LOGD("resetTzHermes called with jsRuntimePtr: %ld", jsRuntimePtr);
 
-    // Get JSI Runtime pointer (equivalent to iOS cxxBridge.runtime)
     auto jsiRuntime = reinterpret_cast<jsi::Runtime*>(jsRuntimePtr);
     if (jsiRuntime == nullptr) {
         LOGE("jsiRuntime is null");
         return;
     }
 
-    // Cast to HermesRuntime (equivalent to iOS reinterpret_cast)
-    auto hermesRuntime = reinterpret_cast<HermesRuntime*>(jsiRuntime);
+    // The runtime may be wrapped; castInterface finds Hermes inside it, as on iOS.
+    auto hermesRuntime = jsi::castInterface<facebook::hermes::IHermes>(jsiRuntime);
     if (hermesRuntime == nullptr) {
-        LOGE("hermesRuntime is null - not running on Hermes");
+        LOGE("the JS runtime does not implement IHermes");
         return;
     }
 
