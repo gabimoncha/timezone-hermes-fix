@@ -1,167 +1,55 @@
-import React, { useState } from 'react';
-import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-  TouchableHighlight,
-} from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Button, ScrollView, StyleSheet, Text } from 'react-native';
+import { NativeTimezoneHermesFix } from '@callstack/timezone-hermes-fix';
 
-import {
-  useTimezoneHermesFix,
-  NativeTimezoneHermesFix,
-} from '@callstack/timezone-hermes-fix';
-
-const stringDate = 'Mon Apr 28 2025 22:50:36 GMT+0900';
-
-const TimezoneAwareComponent = () => {
-  const { currentTimezone } = useTimezoneHermesFix();
-  const date = new Date(stringDate);
-
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Timezone fix</Text>
-      <Text style={styles.timezoneText}>{currentTimezone}</Text>
-      <Text style={styles.dateText}>
-        {date.toLocaleTimeString()} - TimezoneOffset {date.getTimezoneOffset()}
-      </Text>
-    </View>
-  );
-};
-
-const DateComponent = () => {
-  const date = new Date(stringDate);
-
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>No timezone fix</Text>
-      <Text style={styles.dateText}>
-        {date.toLocaleTimeString()} - TimezoneOffset {date.getTimezoneOffset()}
-      </Text>
-    </View>
-  );
-};
-
-const TimezonesListComponent = () => {
-  const [showAll, setShowAll] = useState(false);
-  const timezones = NativeTimezoneHermesFix.getSupportedTimeZones();
-  const displayTimezones = showAll ? timezones : timezones.slice(0, 5);
-
-  return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>Available Timezones</Text>
-      {displayTimezones.map((timezone) => (
-        <Text key={timezone} style={styles.timezoneItem}>
-          {timezone}
-        </Text>
-      ))}
-      <TouchableHighlight
-        onPress={() => setShowAll(!showAll)}
-        style={styles.button}
-      >
-        <Text style={styles.buttonText}>
-          {showAll ? 'Show Less' : 'Show More'}
-        </Text>
-      </TouchableHighlight>
-    </View>
-  );
-};
-
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? '#1a1a1a' : '#f5f5f5',
-    flex: 1,
+function readTimezone() {
+  const native = NativeTimezoneHermesFix.getCurrentTimeZone();
+  const date = new Date();
+  return {
+    zone: native.name,
+    nativeOffset: -native.secondsFromGMT / 60,
+    hermesOffset: date.getTimezoneOffset(),
+    localTime: date.toString(),
   };
+}
+
+export default function App() {
+  const [sample, setSample] = useState(readTimezone);
+  const [lastEvent, setLastEvent] = useState('None');
+
+  useEffect(() => {
+    const event = NativeTimezoneHermesFix.onTimezoneChange((timezone) => {
+      setLastEvent(timezone.name);
+      setSample(readTimezone());
+    });
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setSample(readTimezone());
+    });
+    return () => {
+      event.remove();
+      appState.remove();
+    };
+  }, []);
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}
-        contentContainerStyle={styles.scrollContent}
-      >
-        <View style={styles.container}>
-          <Text style={[styles.title, isDarkMode && styles.titleDark]}>
-            Timezone Demo
-          </Text>
-          <TimezoneAwareComponent />
-          <DateComponent />
-          <TimezonesListComponent />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    <ScrollView contentContainerStyle={styles.content}>
+      <Text accessibilityRole="header">Android timezone reproduction</Text>
+      <Text>
+        Change the timezone in Settings. Return without an app restart.
+      </Text>
+      <Text>Native zone: {sample.zone}</Text>
+      <Text>Native offset: {sample.nativeOffset} minutes</Text>
+      <Text>Hermes offset: {sample.hermesOffset} minutes</Text>
+      <Text>Local time: {sample.localTime}</Text>
+      <Text>Last library event: {lastEvent}</Text>
+      <Text>
+        {sample.nativeOffset === sample.hermesOffset ? 'MATCH' : 'MISMATCH'}
+      </Text>
+      <Button title="Read again" onPress={() => setSample(readTimezone())} />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-  },
-  container: {
-    padding: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 24,
-    color: '#000',
-  },
-  titleDark: {
-    color: '#fff',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#1a1a1a',
-  },
-  timezoneText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 8,
-  },
-  dateText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  timezoneItem: {
-    fontSize: 14,
-    color: '#333',
-    paddingVertical: 4,
-  },
-  button: {
-    backgroundColor: '#007AFF',
-    padding: 8,
-    borderRadius: 8,
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  content: { padding: 24, paddingTop: 64, gap: 16 },
 });
-
-export default App;

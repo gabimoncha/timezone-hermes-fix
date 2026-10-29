@@ -1,97 +1,61 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Reproduce the Android timezone reset thread
 
-# Getting Started
+This branch uses the unpatched 0.5.0 native library with React Native 0.88.0.
+The example has one screen. It compares Android's current UTC offset with
+`Date.getTimezoneOffset()` in Hermes. Both values use minutes west of UTC.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Build
 
-## Step 1: Start Metro
-
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
-
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
+From the repository root, install with Bun. These local links give Gradle
+the example's React Native tools instead of the root library's older tools.
+The existing Yarn lockfile belongs to the original 0.87 example.
 
 ```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+bun install --no-save --ignore-scripts --linker hoisted
+ln -s ../react-native/node_modules/@react-native/gradle-plugin example/node_modules/@react-native/gradle-plugin
+ln -s ../react-native/node_modules/@react-native/codegen example/node_modules/@react-native/codegen
+ln -s react-native/node_modules/hermes-compiler example/node_modules/hermes-compiler
+cd example/android
+./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a
+adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
-### iOS
+Set `ANDROID_HOME` to your Android SDK directory before the build. The APK
+includes its JS bundle, so Metro is not needed. Open the installed example.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Reproduce
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+1. Disable automatic timezone selection in Android Settings.
+2. Choose `Europe/Bucharest`, then launch the example.
+3. Confirm that the native and Hermes offsets match.
+4. Open Settings and change the timezone to `America/Los_Angeles`.
+5. Return to the same app process and tap **Read again**.
+6. Inspect the native log and process threads with the commands below.
 
 ```sh
-bundle install
+adb shell pidof timezonehermesfix.example
+adb logcat -d -v threadtime -s TimezoneHermesFix
+adb shell ps -T -p <pid>
 ```
 
-Then, and every time you update your native dependencies, run:
+The log shows the process ID and thread ID before the tag. If they are equal,
+`resetTzHermes` ran on the process's main thread. Compare that thread ID with
+`mqt_v_js` in the thread list. The cache reset must run on the JS thread.
 
-```sh
-bundle exec pod install
-```
+The offsets and last library event show whether the reset changed the date
+values. A `MATCH` does not establish that the reset used the correct thread.
+The button reads both offsets again, independently of the library's event.
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Restore the original timezone and automatic timezone setting afterward.
+The existing Maestro flow targets the original demo and its fixed date.
+It does not drive this reproduction screen.
 
-```sh
-# Using npm
-npm run ios
+## Observed result
 
-# OR using Yarn
-yarn ios
-```
+On a Samsung SM-G985F with Android 13, both React Native 0.87.0 and 0.88.0
+updated the offsets and emitted the new zone with unpatched library 0.5.0.
+The app process stayed alive. No stale dates or crash occurred in these runs.
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+On 0.88.0, the reset log used process ID `14953` and thread ID `14953`.
+The same process's JS thread, `mqt_v_js`, had thread ID `14986`.
+The reproduced problem is the main-thread runtime access.
